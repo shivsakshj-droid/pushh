@@ -12,8 +12,8 @@ CORS(app, origins=[
 ])
 
 # In production, use environment variables
-VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', 'your_vapid_private_key')
-VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'your_vapid_public_key')
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', 'zKV0SAu0W7WOddH0BhbdTSLBz4hBSCjJiFSWJRWNmq4')
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', 'BNc4QQmaMJpj7ynGIpIqQpMVUaeJeV1B12UvUDvpNAyRqYgB7omV88e-FdQ3573rlMbGoWkDS_TASe7OGp0ujwE')
 VAPID_CLAIMS = {
     "sub": "mailto:your-email@domain.com"  # Replace with your email
 }
@@ -105,4 +105,5 @@ def get_subscriptions():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
