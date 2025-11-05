@@ -16,7 +16,7 @@ def send_web_push_notification(subscription_info, data, vapid_private_key, vapid
         return True
     except WebPushException as ex:
         print(f"WebPushException: {ex}")
-        if ex.response.status_code == 410:
+        if ex.response and ex.response.status_code == 410:
             # Subscription is no longer valid
             print("Subscription expired")
         return False
