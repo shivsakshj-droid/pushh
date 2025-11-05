@@ -6,7 +6,7 @@ from utils.webpush import send_web_push_notification
 
 app = Flask(__name__)
 CORS(app, origins=[
-    "https://yourdomain.com",  # Replace with your Hostinger domain
+    "https://astrologer.playslap.shop/",  # Replace with your Hostinger domain
     "http://localhost:3000",
     "http://127.0.0.1:3000"
 ])
@@ -105,3 +105,4 @@ def get_subscriptions():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
