@@ -3,4 +3,5 @@ Flask-CORS==4.0.0
 pywebpush==1.14.1
 cryptography==41.0.4
 gunicorn==21.2.0
+waitress==2.1.2
 python-dotenv==1.0.0
