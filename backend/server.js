@@ -200,14 +200,14 @@ app.use((error, req, res, next) => {
     });
 });
 
-// Add this route temporarily to check credentials
-app.get('/debug-env', (req, res) => {
-    // Don't show actual secrets in production
+// Add this route to check current environment settings
+app.get('/debug-settings', (req, res) => {
     res.json({
-        ADMIN_USERNAME: process.env.ADMIN_USERNAME,
-        ADMIN_PASSWORD_HASH_SET: !!process.env.ADMIN_PASSWORD_HASH,
-        ADMIN_PASSWORD_HASH_LENGTH: process.env.ADMIN_PASSWORD_HASH ? process.env.ADMIN_PASSWORD_HASH.length : 0,
-        JWT_SECRET_SET: !!process.env.JWT_SECRET
+        admin_username: process.env.ADMIN_USERNAME,
+        admin_password_hash: process.env.ADMIN_PASSWORD_HASH,
+        admin_password_hash_length: process.env.ADMIN_PASSWORD_HASH ? process.env.ADMIN_PASSWORD_HASH.length : 0,
+        jwt_secret_set: !!process.env.JWT_SECRET,
+        environment: process.env.NODE_ENV
     });
 });
 
