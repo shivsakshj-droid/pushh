@@ -297,4 +297,10 @@ router.post('/notification-click', async (req, res) => {
     }
 });
 
+
+// Add a simple test route
+router.get('/test', (req, res) => {
+    res.json({ message: 'Notifications route working' });
+});
+
 module.exports = router;

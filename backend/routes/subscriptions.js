@@ -212,4 +212,9 @@ router.get('/subscription/:endpoint', async (req, res) => {
     }
 });
 
+// Add a simple test route
+router.get('/test', (req, res) => {
+    res.json({ message: 'Subscriptions route working' });
+});
+
 module.exports = router;

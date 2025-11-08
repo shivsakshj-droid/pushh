@@ -5,11 +5,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const webPush = require('web-push');
 
-// Import routes
-const subscriptionRoutes = require('./routes/subscriptions');
-const notificationRoutes = require('./routes/notifications');
-const adminRoutes = require('./routes/admin');
-
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -140,10 +135,25 @@ app.use('/api/', apiLimiter);
 app.use('/api/subscribe', subscribeLimiter);
 app.use('/api/admin', adminLimiter);
 
-// Routes
-app.use('/api', subscriptionRoutes);
-app.use('/api', notificationRoutes);
-app.use('/api/admin', adminRoutes);
+// 🔥 IMPORTANT: Import routes AFTER middleware but BEFORE other routes
+console.log('📦 Loading routes...');
+
+// Import routes
+try {
+    const subscriptionRoutes = require('./routes/subscriptions');
+    const notificationRoutes = require('./routes/notifications');
+    const adminRoutes = require('./routes/admin');
+
+    // Use routes
+    app.use('/api', subscriptionRoutes);
+    app.use('/api', notificationRoutes);
+    app.use('/api/admin', adminRoutes);
+    
+    console.log('✅ Routes loaded successfully');
+} catch (error) {
+    console.error('❌ Error loading routes:', error);
+    process.exit(1);
+}
 
 // Health check endpoint (no database initialization to avoid blocking)
 app.get('/health', async (req, res) => {
@@ -158,6 +168,17 @@ app.get('/health', async (req, res) => {
     };
 
     res.json(health);
+});
+
+// Debug endpoint to check environment
+app.get('/debug-settings', (req, res) => {
+    res.json({
+        admin_username: process.env.ADMIN_USERNAME,
+        admin_password_hash: process.env.ADMIN_PASSWORD_HASH,
+        admin_password_hash_length: process.env.ADMIN_PASSWORD_HASH ? process.env.ADMIN_PASSWORD_HASH.length : 0,
+        jwt_secret_set: !!process.env.JWT_SECRET,
+        environment: process.env.NODE_ENV
+    });
 });
 
 // Root endpoint
@@ -177,6 +198,7 @@ app.get('/', (req, res) => {
 
 // 404 handler
 app.use('*', (req, res) => {
+    console.log('❌ 404 - Endpoint not found:', req.originalUrl);
     res.status(404).json({
         error: 'Endpoint not found',
         path: req.originalUrl
@@ -200,16 +222,9 @@ app.use((error, req, res, next) => {
     });
 });
 
-// Add this route to check current environment settings
-app.get('/debug-settings', (req, res) => {
-    res.json({
-        admin_username: process.env.ADMIN_USERNAME,
-        admin_password_hash: process.env.ADMIN_PASSWORD_HASH,
-        admin_password_hash_length: process.env.ADMIN_PASSWORD_HASH ? process.env.ADMIN_PASSWORD_HASH.length : 0,
-        jwt_secret_set: !!process.env.JWT_SECRET,
-        environment: process.env.NODE_ENV
-    });
-});
+// Test routes
+const testRoutes = require('./routes/test');
+app.use('/api/test', testRoutes);
 
 // Start server
 app.listen(port, () => {
