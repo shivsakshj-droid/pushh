@@ -1,9 +1,24 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const webPush = require('web-push');
+
+// Import routes
+const subscriptionRoutes = require('./routes/subscriptions');
+const notificationRoutes = require('./routes/notifications');
+const adminRoutes = require('./routes/admin');
+
+const app = express();
+const port = process.env.PORT || 3000;
+
 // Validate environment variables
 console.log('🔧 Checking environment configuration...');
 
 const requiredEnvVars = [
   'VAPID_PUBLIC_KEY',
-  'VAPID_PRIVATE_KEY', 
+  'VAPID_PRIVATE_KEY',
   'VAPID_CONTACT_EMAIL',
   'JWT_SECRET',
   'ENCRYPTION_KEY',
@@ -26,51 +41,26 @@ if (missingVars.length > 0) {
   }
 } else {
   console.log('✅ All required environment variables are set');
-}require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const webPush = require('web-push');
-
-// Import routes
-const subscriptionRoutes = require('./routes/subscriptions');
-const notificationRoutes = require('./routes/notifications');
-const adminRoutes = require('./routes/admin');
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Validate required environment variables
-const requiredEnvVars = [
-  'VAPID_PUBLIC_KEY',
-  'VAPID_PRIVATE_KEY',
-  'VAPID_CONTACT_EMAIL',
-  'JWT_SECRET',
-  'ENCRYPTION_KEY',
-  'DATABASE_URL'
-];
-
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`Missing required environment variable: ${envVar}`);
-    process.exit(1);
-  }
 }
 
 // VAPID keys setup
-console.log('Initializing VAPID with public key:', process.env.VAPID_PUBLIC_KEY.substring(0, 20) + '...');
+console.log('Initializing VAPID with public key:', process.env.VAPID_PUBLIC_KEY ? process.env.VAPID_PUBLIC_KEY.substring(0, 20) + '...' : 'Not set');
 
-const vapidKeys = {
-  publicKey: process.env.VAPID_PUBLIC_KEY,
-  privateKey: process.env.VAPID_PRIVATE_KEY
-};
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  const vapidKeys = {
+    publicKey: process.env.VAPID_PUBLIC_KEY,
+    privateKey: process.env.VAPID_PRIVATE_KEY
+  };
 
-webPush.setVapidDetails(
-  `mailto:${process.env.VAPID_CONTACT_EMAIL}`,
-  vapidKeys.publicKey,
-  vapidKeys.privateKey
-);
+  webPush.setVapidDetails(
+    `mailto:${process.env.VAPID_CONTACT_EMAIL}`,
+    vapidKeys.publicKey,
+    vapidKeys.privateKey
+  );
+  console.log('✅ VAPID initialized successfully');
+} else {
+  console.warn('⚠️ VAPID keys not set - push notifications will not work');
+}
 
 // Middleware
 app.use(helmet({
@@ -141,13 +131,45 @@ app.use('/api', notificationRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'OK',
     timestamp: new Date().toISOString(),
     service: 'Web Push Backend',
-    version: '1.0.0'
-  });
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  };
+
+  // Check database connection if DATABASE_URL is set
+  if (process.env.DATABASE_URL) {
+    try {
+      const { Pool } = require('pg');
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      });
+      await pool.query('SELECT NOW()');
+      await pool.end();
+      health.database = 'connected';
+    } catch (error) {
+      health.database = 'disconnected';
+      health.status = 'DEGRADED';
+      health.database_error = error.message;
+    }
+  } else {
+    health.database = 'not_configured';
+    health.status = 'DEGRADED';
+  }
+
+  // Check VAPID configuration
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    health.vapid = 'configured';
+  } else {
+    health.vapid = 'not_configured';
+    health.status = 'DEGRADED';
+  }
+
+  res.json(health);
 });
 
 // Root endpoint
@@ -160,7 +182,8 @@ app.get('/', (req, res) => {
       subscribe: '/api/subscribe',
       unsubscribe: '/api/unsubscribe',
       admin: '/api/admin/*'
-    }
+    },
+    status: 'running'
   });
 });
 
@@ -195,6 +218,8 @@ app.listen(port, () => {
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 CORS allowed origins: ${process.env.ALLOWED_ORIGINS || 'None'}`);
   console.log(`📊 Health check: http://localhost:${port}/health`);
+  console.log(`🗄️ Database: ${process.env.DATABASE_URL ? 'Configured' : 'Not configured'}`);
+  console.log(`📱 VAPID: ${process.env.VAPID_PUBLIC_KEY ? 'Configured' : 'Not configured'}`);
 });
 
 module.exports = app;
