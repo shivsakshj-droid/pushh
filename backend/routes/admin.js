@@ -10,7 +10,7 @@ const pool = new Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Admin login
+// Admin login - SIMPLIFIED VERSION (works without database initially)
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -18,41 +18,51 @@ router.post('/login', async (req, res) => {
         console.log('🔐 Admin login attempt:', username);
 
         if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password required' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Username and password required' 
+            });
         }
 
-        // Get admin user from database
-        const { rows: users } = await pool.query(
-            'SELECT id, username, password_hash, role FROM admin_users WHERE username = $1',
-            [username]
-        );
-
-        if (users.length === 0) {
-            console.log('❌ Admin login failed: user not found');
-            return res.status(401).json({ error: 'Invalid credentials' });
+        // Simple authentication without database lookup initially
+        const expectedUsername = process.env.ADMIN_USERNAME || 'admin';
+        const expectedHash = process.env.ADMIN_PASSWORD_HASH;
+        
+        if (!expectedHash) {
+            console.error('❌ ADMIN_PASSWORD_HASH not set in environment variables');
+            return res.status(500).json({
+                success: false,
+                error: 'Server configuration error - admin credentials not configured'
+            });
         }
 
-        const adminUser = users[0];
-
-        // Verify password
-        const validPassword = await bcrypt.compare(password, adminUser.password_hash);
-        if (!validPassword) {
-            console.log('❌ Admin login failed: invalid password');
-            return res.status(401).json({ error: 'Invalid credentials' });
+        // Simple password check using SHA256 (for initial setup)
+        const crypto = require('crypto');
+        const providedHash = crypto.createHash('sha256').update(password).digest('hex');
+        
+        if (username !== expectedUsername || providedHash !== expectedHash) {
+            console.log('❌ Admin login failed: invalid credentials');
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Invalid credentials' 
+            });
         }
 
-        // Update last login
-        await pool.query(
-            'UPDATE admin_users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1',
-            [adminUser.id]
-        );
+        // Check if JWT_SECRET is set
+        if (!process.env.JWT_SECRET) {
+            console.error('❌ JWT_SECRET not configured');
+            return res.status(500).json({
+                success: false,
+                error: 'Server configuration error'
+            });
+        }
 
         // Generate JWT token
         const token = jwt.sign(
             { 
-                id: adminUser.id, 
-                username: adminUser.username, 
-                role: adminUser.role 
+                id: 1, 
+                username: username, 
+                role: 'admin' 
             },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
@@ -64,15 +74,19 @@ router.post('/login', async (req, res) => {
             success: true,
             token,
             user: {
-                id: adminUser.id,
-                username: adminUser.username,
-                role: adminUser.role
+                id: 1,
+                username: username,
+                role: 'admin'
             }
         });
 
     } catch (error) {
         console.error('❌ Admin login error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
@@ -173,7 +187,10 @@ router.get('/devices', authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Get devices error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error'
+        });
     }
 });
 
@@ -188,13 +205,16 @@ router.get('/devices/:id', authenticateToken, async (req, res) => {
                 os_name, os_version, language, timezone, device_type,
                 ip_address, geo_data, site_version, environment, status,
                 created_at, last_seen_at, last_notification_at, tags,
-                unsubscribed_at, encrypted_keys
+                unsubscribed_at
              FROM subscriptions WHERE id = $1`,
             [id]
         );
 
         if (devices.length === 0) {
-            return res.status(404).json({ error: 'Device not found' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'Device not found' 
+            });
         }
 
         res.json({
@@ -204,7 +224,10 @@ router.get('/devices/:id', authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('Get device error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
     }
 });
 
@@ -291,7 +314,10 @@ router.get('/analytics', authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('❌ Analytics error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
     }
 });
 
@@ -303,14 +329,11 @@ router.delete('/devices/:id', authenticateToken, async (req, res) => {
         const result = await pool.query('DELETE FROM subscriptions WHERE id = $1 RETURNING id', [id]);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Device not found' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'Device not found' 
+            });
         }
-
-        // Log the deletion
-        await pool.query(
-            'INSERT INTO audit_log (admin_user_id, action, resource_type, resource_id, details) VALUES ($1, $2, $3, $4, $5)',
-            [req.user.id, 'DELETE', 'subscription', id, { reason: 'GDPR compliance' }]
-        );
 
         console.log(`🗑️ Device deleted: ${id} by ${req.user.username}`);
 
@@ -321,50 +344,10 @@ router.delete('/devices/:id', authenticateToken, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Delete device error:', error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-// Export and delete device (GDPR compliance)
-router.post('/devices/:id/export-delete', authenticateToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const { rows: devices } = await pool.query(
-            `SELECT 
-                id, endpoint, origin, browser_name, browser_version,
-                os_name, os_version, language, timezone, device_type,
-                site_version, environment, status, created_at, last_seen_at
-             FROM subscriptions WHERE id = $1`,
-            [id]
-        );
-
-        if (devices.length === 0) {
-            return res.status(404).json({ error: 'Device not found' });
-        }
-
-        const deviceData = devices[0];
-
-        // Delete the device
-        await pool.query('DELETE FROM subscriptions WHERE id = $1', [id]);
-
-        // Log the export and deletion
-        await pool.query(
-            'INSERT INTO audit_log (admin_user_id, action, resource_type, resource_id, details) VALUES ($1, $2, $3, $4, $5)',
-            [req.user.id, 'EXPORT_DELETE', 'subscription', id, { exported: true }]
-        );
-
-        console.log(`📤 Device exported and deleted: ${id} by ${req.user.username}`);
-
-        res.json({
-            success: true,
-            message: 'Data exported and deleted successfully',
-            exportedData: deviceData
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
         });
-
-    } catch (error) {
-        console.error('❌ Export/delete error:', error);
-        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -385,7 +368,10 @@ router.get('/filters/options', authenticateToken, async (req, res) => {
         });
     } catch (error) {
         console.error('Filters options error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
     }
 });
 
