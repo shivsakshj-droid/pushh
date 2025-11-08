@@ -200,6 +200,17 @@ app.use((error, req, res, next) => {
     });
 });
 
+// Add this route temporarily to check credentials
+app.get('/debug-env', (req, res) => {
+    // Don't show actual secrets in production
+    res.json({
+        ADMIN_USERNAME: process.env.ADMIN_USERNAME,
+        ADMIN_PASSWORD_HASH_SET: !!process.env.ADMIN_PASSWORD_HASH,
+        ADMIN_PASSWORD_HASH_LENGTH: process.env.ADMIN_PASSWORD_HASH ? process.env.ADMIN_PASSWORD_HASH.length : 0,
+        JWT_SECRET_SET: !!process.env.JWT_SECRET
+    });
+});
+
 // Start server
 app.listen(port, () => {
     console.log(`🚀 Web Push Backend running on port ${port}`);
