@@ -31,18 +31,18 @@ function decrypt(encryptedData) {
 }
 
 // Send notification to multiple devices
-router.post('/notify', authenticateToken, async (req, res) => {
+router.post('/notify', async (req, res) => {
     try {
         const { 
             title, 
-            body, 
+            body = '', 
             icon = '/icon-192.png', 
             badge = '/icon-192.png', 
             url = '/', 
-            ttl = 2419200, 
+            ttl = 604800, 
             actions = [], 
             tag = 'general', 
-            requireInteraction = false, 
+            requireInteraction = false,
             deviceIds = [], 
             tags = [] 
         } = req.body;
@@ -50,7 +50,10 @@ router.post('/notify', authenticateToken, async (req, res) => {
         console.log('📤 Sending notification:', title);
 
         if (!title) {
-            return res.status(400).json({ error: 'Notification title is required' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Notification title is required' 
+            });
         }
 
         // Build query based on filters
@@ -73,7 +76,10 @@ router.post('/notify', authenticateToken, async (req, res) => {
         const { rows: subscriptions } = await pool.query(query, values);
 
         if (subscriptions.length === 0) {
-            return res.status(404).json({ error: 'No active subscriptions found' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'No active subscriptions found' 
+            });
         }
 
         console.log(`📱 Sending to ${subscriptions.length} devices`);
@@ -81,17 +87,20 @@ router.post('/notify', authenticateToken, async (req, res) => {
         const notificationId = crypto.randomUUID();
         const notificationPayload = {
             title,
-            body: body || '',
+            body: body,
             icon: icon,
             badge: badge,
+            image: req.body.image,
             data: {
                 url: url,
                 id: notificationId,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                tag: tag
             },
             actions: actions,
             tag: tag,
-            requireInteraction: requireInteraction
+            requireInteraction: requireInteraction,
+            vibrate: [200, 100, 200]
         };
 
         const results = {
@@ -168,7 +177,7 @@ router.post('/notify', authenticateToken, async (req, res) => {
         await pool.query(
             `INSERT INTO notification_sends (notification_id, title, body, sent_to_count, successful_sends, failed_sends, sent_by) 
              VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [notificationId, title, body, subscriptions.length, results.sent, results.failed, req.user.username]
+            [notificationId, title, body, subscriptions.length, results.sent, results.failed, 'dashboard']
         );
 
         console.log(`✅ Notification sent: ${results.sent} successful, ${results.failed} failed`);
@@ -183,6 +192,7 @@ router.post('/notify', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('❌ Notification send error:', error);
         res.status(500).json({ 
+            success: false,
             error: 'Internal server error',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
@@ -190,12 +200,15 @@ router.post('/notify', authenticateToken, async (req, res) => {
 });
 
 // Send test notification to single device
-router.post('/notify/test', authenticateToken, async (req, res) => {
+router.post('/notify/test', async (req, res) => {
     try {
         const { deviceId } = req.body;
 
         if (!deviceId) {
-            return res.status(400).json({ error: 'Device ID is required' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Device ID is required' 
+            });
         }
 
         // Get device subscription
@@ -205,7 +218,10 @@ router.post('/notify/test', authenticateToken, async (req, res) => {
         );
 
         if (devices.length === 0) {
-            return res.status(404).json({ error: 'Active device not found' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'Active device not found' 
+            });
         }
 
         const device = devices[0];
@@ -221,7 +237,8 @@ router.post('/notify/test', authenticateToken, async (req, res) => {
                 id: notificationId,
                 timestamp: new Date().toISOString()
             },
-            tag: 'test'
+            tag: 'test',
+            requireInteraction: false
         };
 
         try {
@@ -259,6 +276,7 @@ router.post('/notify/test', authenticateToken, async (req, res) => {
             }
 
             res.status(500).json({
+                success: false,
                 error: 'Failed to send test notification',
                 details: error.message
             });
@@ -266,7 +284,112 @@ router.post('/notify/test', authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('Test notification error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
+    }
+});
+
+// Send notification to specific devices by IDs
+router.post('/notify/devices', async (req, res) => {
+    try {
+        const { deviceIds, title, body, icon, badge, url } = req.body;
+
+        if (!deviceIds || !Array.isArray(deviceIds) || deviceIds.length === 0) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Device IDs array is required' 
+            });
+        }
+
+        if (!title) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Notification title is required' 
+            });
+        }
+
+        const { rows: subscriptions } = await pool.query(
+            'SELECT id, endpoint, encrypted_keys FROM subscriptions WHERE id = ANY($1) AND status = $2',
+            [deviceIds, 'active']
+        );
+
+        if (subscriptions.length === 0) {
+            return res.status(404).json({ 
+                success: false,
+                error: 'No active devices found with the provided IDs' 
+            });
+        }
+
+        const notificationId = crypto.randomUUID();
+        const notificationPayload = {
+            title,
+            body: body || '',
+            icon: icon || '/icon-192.png',
+            badge: badge || '/icon-192.png',
+            data: {
+                url: url || '/',
+                id: notificationId,
+                timestamp: new Date().toISOString()
+            },
+            tag: 'targeted'
+        };
+
+        const results = {
+            sent: 0,
+            failed: 0,
+            errors: []
+        };
+
+        const sendPromises = subscriptions.map(async (sub) => {
+            try {
+                const decryptedKeys = JSON.parse(decrypt(sub.encrypted_keys));
+                const pushSubscription = {
+                    endpoint: sub.endpoint,
+                    keys: decryptedKeys
+                };
+
+                await webPush.sendNotification(pushSubscription, JSON.stringify(notificationPayload));
+                
+                await pool.query(
+                    'UPDATE subscriptions SET last_notification_at = CURRENT_TIMESTAMP WHERE id = $1',
+                    [sub.id]
+                );
+
+                results.sent++;
+            } catch (error) {
+                console.error(`Failed to send to device ${sub.id}:`, error.message);
+                results.failed++;
+                results.errors.push({
+                    deviceId: sub.id,
+                    error: error.message
+                });
+
+                if (error.statusCode === 410 || error.statusCode === 404) {
+                    await pool.query(
+                        'UPDATE subscriptions SET status = $1 WHERE id = $2',
+                        ['inactive', sub.id]
+                    );
+                }
+            }
+        });
+
+        await Promise.allSettled(sendPromises);
+
+        res.json({
+            success: true,
+            message: `Notifications sent to ${results.sent} devices, ${results.failed} failed`,
+            notificationId,
+            results
+        });
+
+    } catch (error) {
+        console.error('Targeted notification error:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
     }
 });
 
@@ -276,7 +399,10 @@ router.post('/notification-click', async (req, res) => {
         const { endpoint, notificationId, action = 'click' } = req.body;
 
         if (!endpoint) {
-            return res.status(400).json({ error: 'Endpoint is required' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Endpoint is required' 
+            });
         }
 
         await pool.query(
@@ -293,14 +419,46 @@ router.post('/notification-click', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Click tracking error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
     }
 });
 
+// Get notification send history
+router.get('/sends', async (req, res) => {
+    try {
+        const { page = 1, limit = 20 } = req.query;
+        const offset = (page - 1) * limit;
 
-// Add a simple test route
-router.get('/test', (req, res) => {
-    res.json({ message: 'Notifications route working' });
+        const { rows: sends } = await pool.query(
+            `SELECT * FROM notification_sends 
+             ORDER BY sent_at DESC 
+             LIMIT $1 OFFSET $2`,
+            [limit, offset]
+        );
+
+        const { rows: countRows } = await pool.query('SELECT COUNT(*) FROM notification_sends');
+        const total = parseInt(countRows[0].count);
+
+        res.json({
+            success: true,
+            sends,
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Get notification sends error:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'Internal server error' 
+        });
+    }
 });
 
 module.exports = router;
