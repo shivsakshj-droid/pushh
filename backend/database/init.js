@@ -68,11 +68,10 @@ CREATE TABLE IF NOT EXISTS notification_sends (
     sent_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert admin user
+-- Insert admin user (will be updated later to match environment variable)
 INSERT INTO admin_users (username, password_hash, role) 
-VALUES ('admin', $1, 'admin')
-ON CONFLICT (username) 
-DO UPDATE SET password_hash = EXCLUDED.password_hash;
+VALUES ('admin', 'admin123', 'admin')
+ON CONFLICT (username) DO NOTHING;
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
@@ -122,12 +121,7 @@ async function initializeDatabase() {
                 const statement = statements[i].trim();
                 if (statement) {
                     try {
-                        if (statement.includes('$1')) {
-                            // This is the INSERT statement with parameter
-                            await client.query(statement, [process.env.ADMIN_PASSWORD_HASH]);
-                        } else {
-                            await client.query(statement);
-                        }
+                        await client.query(statement);
                     } catch (error) {
                         // Ignore "already exists" errors
                         if (!error.message.includes('already exists') && 
@@ -142,14 +136,20 @@ async function initializeDatabase() {
             console.log('✅ Database tables created successfully');
         } else {
             console.log('✅ Database tables already exist');
+        }
+
+        // 🔥 CRITICAL FIX: Update admin password to match environment variable
+        if (process.env.ADMIN_PASSWORD_HASH) {
+            console.log('🔄 Syncing admin password with environment variable...');
+            const result = await client.query(
+                'UPDATE admin_users SET password_hash = $1 WHERE username = $2 RETURNING username',
+                [process.env.ADMIN_PASSWORD_HASH, process.env.ADMIN_USERNAME || 'admin']
+            );
             
-            // Update admin password if table exists but we need to update credentials
-            if (process.env.ADMIN_PASSWORD_HASH) {
-                await client.query(
-                    'UPDATE admin_users SET password_hash = $1 WHERE username = $2',
-                    [process.env.ADMIN_PASSWORD_HASH, process.env.ADMIN_USERNAME || 'admin']
-                );
-                console.log('✅ Admin password updated');
+            if (result.rows.length > 0) {
+                console.log('✅ Admin password synced with environment variable');
+            } else {
+                console.log('⚠️ No admin user found to update');
             }
         }
 
