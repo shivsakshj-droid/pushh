@@ -1,4 +1,32 @@
-require('dotenv').config();
+// Validate environment variables
+console.log('🔧 Checking environment configuration...');
+
+const requiredEnvVars = [
+  'VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY', 
+  'VAPID_CONTACT_EMAIL',
+  'JWT_SECRET',
+  'ENCRYPTION_KEY',
+  'DATABASE_URL'
+];
+
+const missingVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:');
+  missingVars.forEach(envVar => {
+    console.error(`   - ${envVar}`);
+  });
+  
+  if (process.env.NODE_ENV === 'production') {
+    console.error('🚨 Cannot start in production without required environment variables');
+    process.exit(1);
+  } else {
+    console.warn('⚠️  Starting in development mode with missing variables');
+  }
+} else {
+  console.log('✅ All required environment variables are set');
+}require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
