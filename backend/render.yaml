@@ -1,0 +1,41 @@
+# Render Blueprint for Web Push Backend
+services:
+  - type: web
+    name: web-push-backend
+    env: node
+    plan: free
+    region: oregon  # Options: oregon, ohio, frankfurt, singapore
+    buildCommand: |
+      npm install
+      npm run migrate
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: web-push-db
+          property: connectionString
+      - key: VAPID_PUBLIC_KEY
+        value: BLx1xssUa_your_actual_public_key_here
+      - key: VAPID_PRIVATE_KEY
+        value: your_actual_private_key_here
+      - key: VAPID_CONTACT_EMAIL
+        value: your-email@example.com
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD_HASH
+        value: ${{bcrypt.hash('your-secure-password-here')}}
+      - key: ALLOWED_ORIGINS
+        value: https://yourdomain.com,https://www.yourdomain.com
+
+databases:
+  - name: web-push-db
+    plan: free
+    databaseName: webpush
+    user: webpush_user
